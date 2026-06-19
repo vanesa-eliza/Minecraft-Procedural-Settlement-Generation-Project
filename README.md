@@ -1,98 +1,101 @@
 # GDMC Settlement Generator
 
-Procedurally generates a coherent medieval settlement in a Minecraft world.
-It analyses the terrain, plans districts, roads, and plots, then builds
-biome-aware structures into them and writes the result back to the world via
-the GDMC HTTP Interface.
+Procedurally generates a coherent medieval settlement in a Minecraft world by 
+analysing terrain, planning districts and roads, then constructing biome-aware 
+structures—all written back via the GDMC HTTP Interface.
 
-For a full module/dependency map see [diagram.mmd](diagram.mmd) (Mermaid), and
-for a deeper walkthrough see [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md).
+**Built as a team project** where I led systems integration, refactoring, and 
+AI decision-making components.
 
 ## Requirements
 
 - Python 3.10+
 - Minecraft running with the **GDMC HTTP Interface** mod active
-- Python deps in [Requirements.txt](Requirements.txt): `gdpc`, `numpy`
-  (the `training/` scripts additionally use `pandas`, `scikit-learn`, and
-  `matplotlib`)
+- Python deps: `gdpc>=7.0.0`, `numpy>=1.24.0`
 
-## Setup
+## Setup & Run
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r Requirements.txt
-```
-
-## Run
-
-With Minecraft open and the GDMC HTTP Interface listening:
-
-```bash
+pip install -r requirements.txt
 python main.py
 ```
 
-The generator connects, runs the full pipeline, and logs a summary
-(districts, road cells, plots, buildings) when finished.
+## The Challenge
 
-## How it works
+Building a settlement generator requires solving several interconnected problems:
 
-`main.py` → `create_generator()` ([generators/__init__.py](generators/__init__.py))
-wires the dependencies and hands off to
-`SettlementGenerator.generate()`
-([generators/settlement_generator.py](generators/settlement_generator.py)),
-which runs:
+1. **Placement accuracy** — structures must sit on solid ground, not float or clip 
+   into terrain. This required careful heightmap analysis and validation against 
+   an occupancy map.
+2. **Terrain adaptation** — terraforming logic needed to fill pits and level building 
+   sites realistically, as a player would.
+3. **Systems integration** — each team member owned a subsystem (terrain analysis, 
+   planning, structures, world I/O). My role was ensuring they worked cohesively, 
+   refactoring interfaces and eliminating duplication.
+4. **Autonomous decisions** — the system needed to choose district types, select 
+   appropriate buildings, and score designs without hardcoded rules.
 
-1. **Analyse** the world and pick the best buildable patch (`analysis/`)
-2. **Plan districts** as a Voronoi partition, with types assigned by an MDP (`ai/district_mdp.py`)
-3. Place a **central plaza + ring road**
-4. Place **district markers** (fountains / wells / docks)
-5. **Plan and place roads** (MST + A*)
-6. **Plan plots** validated against an occupancy map
-7. **Build structures** — a weighted selector picks a building per plot, then
-   orchestrators → grammar rules → primitive builders construct it (`structures/`)
-8. Add **connector footpaths** from each building to the nearest road
-9. Build a **perimeter fortification** with corner towers
-10. **Flush** the accumulated block buffer to Minecraft
+## How It Works
 
-All builders write to an in-memory `BlockBuffer`; a single `StructurePlacer`
-performs the actual world writes at the end.
+`main.py` → `create_generator()` wires dependencies and runs the full pipeline:
 
-## Project layout
+1. **Analyse** terrain, pick best buildable patch
+2. **Assign district types** using value iteration MDP
+3. **Plan layout** — plaza, ring road, districts (Voronoi), plots
+4. **Build structures** — selector picks a building per plot, orchestrators 
+   compose grammar rules to construct it
+5. **Score designs** — Random Forest + n-gram model evaluate candidate house shapes
+6. **Flatten & place** — validate placement, terraform, write to world
 
-| Path | Purpose |
-|------|---------|
-| `main.py` | Entry point |
-| `generators/` | Composition root + generation pipeline |
-| `analysis/` | Terrain fetch, scoring, best-patch selection |
-| `ai/` | District-type assignment (MDP via value iteration) |
-| `planning/` | District, road, and plot planners |
-| `palette/` | Biome/archetype-aware material selection |
-| `structures/` | Building generation (selector → orchestrators → grammar → primitives) |
-| `data/` | Config, analysis results, settlement state and entities |
-| `utils/` | Shared algorithms (A*, MST, Poisson disk, geometry, HTTP client) |
-| `world_interface/` | Minecraft I/O: terrain loader, block buffer, placer, terraforming |
-| `training/` | Offline ML scripts that produce `models/*.pkl` |
-| `models/` | Trained house scorer + n-gram model |
-| `debug/` | Standalone manual testers and visualisers |
+See [diagram.mmd](diagram.mmd) for the full dependency map.
 
-## House design (ML)
+## My Contributions
 
-Houses are scored by two trained models in `models/`: a Random Forest shape
-scorer and an n-gram block-sequence scorer. For each house the builder samples
-several candidate designs and keeps the best-scoring one. Retrain with:
+- **Structure architecture** — designed the selector → orchestrator → grammar → 
+  primitive builder composition, allowing new building types to be added independently
+- **AI integration** — implemented MDP for district-type assignment and integrated 
+  trained Random Forest + n-gram models for structure scoring
+- **Systems integration** — refactored the codebase to eliminate coupling between 
+  terrain analysis, planning, and building subsystems, ensuring each team member's 
+  work composed cleanly
+- **Placement & terraforming** — solved the ground-level accuracy problem by 
+  validating structure footprints against heightmaps and occupancy maps, with 
+  realistic pit-filling logic
 
-```bash
-python training/train_scorer.py      # rescore labels + train RandomForest
-python training/eval_house_ngram.py  # train/evaluate the n-gram model
-```
+## What I Learned
+
+- **System design at scale** — coordinating 10+ interdependent modules, each 
+  authored by different people, requires clear interfaces and dependency injection
+- **Algorithms in practice** — pathfinding (A*, MST), spatial partitioning (Voronoi), 
+  and decision-making (MDP, ML scoring) solve real placement and design challenges
+- **Team coordination** — refactoring and integration work is invisible but critical; 
+  good architecture makes future collaboration seamless
+- **Real-world constraints** — theoretical solutions fail when terrain is uneven, 
+  structures overlap, or edge cases emerge. Validation and fallback logic matter
 
 ## Testing
 
-There is no automated test suite. `debug/test_*.py` are standalone scripts that
-build a single structure into a live world; run them from the project root:
+Standalone debug scripts in `debug/test_*.py` validate individual structures:
 
 ```bash
 python debug/test_house.py
 python debug/test_tavern.py
 ```
+
+## Project Layout
+
+| Path | Purpose |
+|------|---------|
+| `generators/` | Composition root + generation pipeline |
+| `analysis/` | Terrain fetch, scoring, best-patch selection |
+| `ai/` | District-type assignment (MDP via value iteration) |
+| `planning/` | District, road, and plot planners |
+| `structures/` | Building selector → orchestrators → grammar → primitives |
+| `data/` | Config, analysis results, settlement entities |
+| `utils/` | A*, MST, Poisson disk, pathfinding, geometry |
+| `world_interface/` | Terrain I/O, block buffer, placer, terraforming |
+| `training/` | ML training scripts (Random Forest, n-gram) |
+
+For a deeper walkthrough, see [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md).
